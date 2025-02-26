@@ -2,76 +2,53 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('help')
-    .setDescription('Show all available commands')
-    .addStringOption(option => 
-      option.setName('command')
-        .setDescription('Get info about a specific command')
+    .setName('volume')
+    .setDescription('Change the player volume')
+    .addIntegerOption(option => 
+      option.setName('level')
+        .setDescription('The volume level (0-100)')
+        .setMinValue(0)
+        .setMaxValue(100)
         .setRequired(false)),
   
   async execute(interaction, client) {
-    const prefix = "!";
-    const commandName = interaction.options.getString('command');
+    const queue = client.distube.getQueue(interaction.guildId);
     
-    // If a specific command is requested
-    if (commandName) {
-      const command = client.slashCommands.get(commandName) || 
-                      client.commands.get(commandName) || 
-                      client.commands.find(cmd => cmd.aliases && cmd.aliases.includes(commandName));
-      
-      if (!command) {
-        return interaction.reply({ 
-          content: `Could not find command \`${commandName}\``,
-          ephemeral: true 
-        });
-      }
-      
-      const embed = new EmbedBuilder()
-        .setTitle(`Command: ${command.data ? `/${command.data.name}` : `${prefix}${command.name}`}`)
-        .setDescription(command.description || command.data?.description || 'No description provided')
-        .setColor('#0099FF')
-        .setTimestamp();
-      
-      if (command.aliases && command.aliases.length) {
-        embed.addFields({ name: 'Aliases', value: command.aliases.map(alias => `\`${prefix}${alias}\``).join(', '), inline: false });
-      }
-      
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+    // Check if there is a queue
+    if (!queue) {
+      return interaction.reply({ 
+        content: 'No music is currently playing!',
+        ephemeral: true 
+      });
     }
     
-    // General help - show all commands
+    // Check if the user is in the same voice channel
+    const { channel } = interaction.member.voice;
+    if (!channel || channel.id !== queue.voiceChannel.id) {
+      return interaction.reply({ 
+        content: 'You need to be in the same voice channel as the bot to change volume!',
+        ephemeral: true 
+      });
+    }
+    
+    // Get the volume from options
+    const volume = interaction.options.getInteger('level');
+    
+    // If no volume specified, return current volume
+    if (volume === null) {
+      return interaction.reply(`The current volume is: **${queue.volume}%**`);
+    }
+    
+    // Set the volume
+    queue.setVolume(volume);
+    
+    // Create an embed for the response
     const embed = new EmbedBuilder()
-      .setTitle('Music Bot Commands')
-      .setDescription('Here are all available commands.')
+      .setTitle('Volume Changed')
+      .setDescription(`Volume set to: **${volume}%**`)
       .setColor('#0099FF')
-      .setTimestamp()
-      .setFooter({ text: 'Use /help [command] for detailed info on a specific command' });
+      .setTimestamp();
     
-    // Create categories for slash commands
-    const slashCategories = {
-      'Music': ['play', 'pause', 'stop', 'skip', 'volume', 'queue', 'nowplaying'],
-      'Utility': ['help']
-    };
-    
-    // Add fields for each slash command category
-    for (const [category, commands] of Object.entries(slashCategories)) {
-      const commandList = commands
-        .filter(cmd => client.slashCommands.has(cmd))
-        .map(cmd => `\`/${cmd}\``)
-        .join(', ');
-      
-      if (commandList.length) {
-        embed.addFields({ name: `${category} (Slash Commands)`, value: commandList, inline: false });
-      }
-    }
-    
-    // Add info about prefix commands
-    embed.addFields({ 
-      name: 'Prefix Commands', 
-      value: `This bot also supports prefix commands starting with \`${prefix}\`. Type \`${prefix}help\` for more information.`, 
-      inline: false 
-    });
-    
-    interaction.reply({ embeds: [embed], ephemeral: true });
+    interaction.reply({ embeds: [embed] });
   },
 };

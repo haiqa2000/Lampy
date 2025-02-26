@@ -1,8 +1,10 @@
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Collection } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
-const { Manager } = require('erela.js');
-const Spotify = require('erela.js-spotify');
+const { DisTube } = require('distube');
+const { SpotifyPlugin } = require('@distube/spotify');
+const { SoundCloudPlugin } = require('@distube/soundcloud');
+const { YtDlpPlugin } = require('@distube/yt-dlp');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
@@ -23,20 +25,33 @@ const client = new Client({
 const config = {
   prefix: '!',
   clientId: process.env.CLIENT_ID, 
-  token: process.env.TOKEN,        
+  token: process.env.TOKEN,
   spotify: {
     clientId: process.env.SPOTIFY_CLIENT_ID,    
     clientSecret: process.env.SPOTIFY_CLIENT_SECRET 
-  },
-  nodes: [
-    {
-      host: process.env.LAVALINK_HOST || 'lavalink.jirayu.net',
-      port: parseInt(process.env.LAVALINK_PORT) || 13592,
-      password: process.env.LAVALINK_PASSWORD || 'youshallnotpass',
-      secure: process.env.LAVALINK_SECURE === 'false' || false
-    }
-  ]
+  }
 };
+
+// Initialize DisTube with plugins
+client.distube = new DisTube(client, {
+  leaveOnStop: false,
+  leaveOnFinish: false,
+  leaveOnEmpty: true,
+  emitNewSongOnly: true,
+  emitAddSongWhenCreatingQueue: false,
+  emitAddListWhenCreatingQueue: false,
+  plugins: [
+    new SpotifyPlugin({
+      emitEventsAfterFetching: true,
+      api: {
+        clientId: config.spotify.clientId,
+        clientSecret: config.spotify.clientSecret,
+      },
+    }),
+    new SoundCloudPlugin(),
+    new YtDlpPlugin()
+  ]
+});
 
 // Collections for commands
 client.commands = new Collection();
@@ -92,27 +107,6 @@ const rest = new REST({ version: '10' }).setToken(config.token);
   }
 })();
 
-// Initialize Erela.js Manager (Lavalink client)
-client.manager = new Manager({
-  // Nodes array
-  nodes: config.nodes,
-  
-  // Plugins
-  plugins: [
-    // Spotify plugin
-    new Spotify({
-      clientID: config.spotify.clientId,
-      clientSecret: config.spotify.clientSecret
-    })
-  ],
-  
-  // Send packets to WebSocket
-  send(id, payload) {
-    const guild = client.guilds.cache.get(id);
-    if (guild) guild.shard.send(payload);
-  }
-});
-
 // Utility function for creating embeds
 function createEmbed(title, description, color = '#FF0000') {
   return new EmbedBuilder()
@@ -122,67 +116,98 @@ function createEmbed(title, description, color = '#FF0000') {
     .setTimestamp();
 }
 
-// Erela.js event listeners
-client.manager.on("nodeConnect", node => {
-  console.log(`Node "${node.options.identifier}" connected.`);
-});
+// Utility function to create music control buttons
+function createMusicControlButtons() {
+  return new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('pause_resume')
+        .setLabel('⏯️')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('skip')
+        .setLabel('⏭️')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('stop')
+        .setLabel('⏹️')
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId('queue')
+        .setLabel('📋')
+        .setStyle(ButtonStyle.Secondary)
+    );
+}
 
-client.manager.on("nodeError", (node, error) => {
-  console.log(`Node "${node.options.identifier}" encountered an error: ${error.message}`);
-});
-
-client.manager.on("trackStart", (player, track) => {
-  const channel = client.channels.cache.get(player.textChannel);
-  if (channel) {
-    const embed = createEmbed('Now Playing', `[${track.title}](${track.uri})`, '#00FF00');
+// DisTube event listeners
+client.distube
+  .on('playSong', (queue, song) => {
+    const embed = createEmbed(
+      'Now Playing', 
+      `[${song.name}](${song.url}) - \`${formatDuration(song.duration * 1000)}\`\nRequested by: ${song.user}`,
+      '#00FF00'
+    );
     
-    const row = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId('pause_resume')
-          .setLabel('⏯️')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId('skip')
-          .setLabel('⏭️')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId('stop')
-          .setLabel('⏹️')
-          .setStyle(ButtonStyle.Danger),
-        new ButtonBuilder()
-          .setCustomId('queue')
-          .setLabel('📋')
-          .setStyle(ButtonStyle.Secondary)
-      );
-    
-    channel.send({ embeds: [embed], components: [row] }).then(msg => {
-      player.set('nowPlayingMessage', msg.id);
+    queue.textChannel.send({ 
+      embeds: [embed], 
+      components: [createMusicControlButtons()]
+    }).then(msg => {
+      queue.nowPlayingMessage = msg.id;
     });
-  }
-});
-
-client.manager.on("queueEnd", player => {
-  const channel = client.channels.cache.get(player.textChannel);
-  if (channel) {
-    channel.send({ embeds: [createEmbed('Queue Finished', 'No more songs in the queue.', '#FFFF00')] });
-  }
+  })
   
-  // Disconnect after a minute of inactivity
-  setTimeout(() => {
-    if (!player.playing && player.state === "CONNECTED") {
-      player.destroy();
+  .on('addSong', (queue, song) => {
+    queue.textChannel.send({
+      embeds: [createEmbed(
+        'Added to Queue', 
+        `[${song.name}](${song.url}) - \`${formatDuration(song.duration * 1000)}\`\nRequested by: ${song.user}`,
+        '#0099FF'
+      )]
+    });
+  })
+  
+  .on('addList', (queue, playlist) => {
+    queue.textChannel.send({
+      embeds: [createEmbed(
+        'Added Playlist to Queue', 
+        `Added [${playlist.name}](${playlist.url}) (${playlist.songs.length} songs) to the queue\nRequested by: ${playlist.user}`,
+        '#0099FF'
+      )]
+    });
+  })
+  
+  .on('empty', queue => {
+    queue.textChannel.send({
+      embeds: [createEmbed('Channel Empty', 'Leaving the voice channel because everyone left.', '#FFFF00')]
+    });
+  })
+  
+  .on('error', (channel, error) => {
+    if (channel) {
+      channel.send({
+        embeds: [createEmbed('Error!', `An error occurred: ${error.toString().slice(0, 1974)}`, '#FF0000')]
+      });
+    } else {
+      console.error(error);
     }
-  }, 60000);
-});
+  })
+  
+  .on('finish', queue => {
+    queue.textChannel.send({
+      embeds: [createEmbed('Queue Finished', 'No more songs in the queue.', '#FFFF00')]
+    });
+  })
+  
+  .on('disconnect', queue => {
+    queue.textChannel.send({
+      embeds: [createEmbed('Disconnected', 'Disconnected from the voice channel.', '#FFFF00')]
+    });
+  });
 
 // Discord.js event handlers
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}!`);
-  client.manager.init(client.user.id);
 });
-
-client.on('raw', d => client.manager.updateVoiceState(d));
 
 client.on('messageCreate', async message => {
   if (message.author.bot || !message.guild) return;
@@ -207,9 +232,9 @@ client.on('interactionCreate', async interaction => {
   if (interaction.isButton()) {
     // Handle button interactions (reaction controls)
     const { customId } = interaction;
-    const player = client.manager.players.get(interaction.guild.id);
+    const queue = client.distube.getQueue(interaction.guildId);
     
-    if (!player) {
+    if (!queue) {
       return interaction.reply({ 
         content: 'No music is currently playing.', 
         ephemeral: true 
@@ -218,40 +243,52 @@ client.on('interactionCreate', async interaction => {
     
     switch (customId) {
       case 'pause_resume':
-        player.pause(!player.paused);
-        await interaction.reply({ 
-          content: player.paused ? 'Paused the music.' : 'Resumed the music.',
-          ephemeral: true 
-        });
+        if (queue.paused) {
+          queue.resume();
+          await interaction.reply({ content: 'Resumed the music.', ephemeral: true });
+        } else {
+          queue.pause();
+          await interaction.reply({ content: 'Paused the music.', ephemeral: true });
+        }
         break;
         
       case 'skip':
-        player.stop();
-        await interaction.reply({ content: 'Skipped the song.', ephemeral: true });
+        try {
+          await queue.skip();
+          await interaction.reply({ content: 'Skipped the song.', ephemeral: true });
+        } catch (e) {
+          await interaction.reply({ content: `Error: ${e}`, ephemeral: true });
+        }
         break;
         
       case 'stop':
-        player.destroy();
-        await interaction.reply({ content: 'Stopped the music and left the channel.', ephemeral: true });
+        queue.stop();
+        await interaction.reply({ content: 'Stopped the music.', ephemeral: true });
         break;
         
       case 'queue':
-        const queue = player.queue;
-        
-        if (!queue.length) {
+        if (!queue.songs.length) {
           return interaction.reply({ 
             content: 'No songs in the queue.',
             ephemeral: true 
           });
         }
         
-        const queueList = queue.map((track, index) => 
-          `${index + 1}. [${track.title}](${track.uri}) [${formatDuration(track.duration)}]`
-        ).join('\n');
+        const queueList = queue.songs
+          .slice(0, 10) // Limit to first 10 songs for readability
+          .map((song, index) => 
+            `${index === 0 ? '**Now Playing:**' : `**${index}.**`} [${song.name}](${song.url}) - \`${formatDuration(song.duration * 1000)}\``
+          )
+          .join('\n');
+        
+        const totalSongs = queue.songs.length - 1;
+        const totalDuration = formatDuration(
+          queue.songs.reduce((acc, song) => acc + song.duration * 1000, 0)
+        );
         
         const embed = createEmbed(
-          'Current Queue', 
-          `**Now Playing:** [${player.queue.current.title}](${player.queue.current.uri})\n\n**Up Next:**\n${queueList}`,
+          'Music Queue', 
+          `${queueList}\n\n${totalSongs > 10 ? `\nAnd ${totalSongs - 10} more song(s)` : ''}\n\n**Total Duration:** \`${totalDuration}\``,
           '#0099FF'
         );
         

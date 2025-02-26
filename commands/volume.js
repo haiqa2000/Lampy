@@ -4,22 +4,22 @@ module.exports = {
   name: 'volume',
   description: 'Change the player volume',
   execute(message, args, client) {
-    const player = client.manager.get(message.guild.id);
+    const queue = client.distube.getQueue(message.guildId);
     
-    // Check if there is a player
-    if (!player) {
+    // Check if there is a queue
+    if (!queue) {
       return message.reply('No music is currently playing!');
     }
     
     // Check if the user is in the same voice channel
     const { channel } = message.member.voice;
-    if (!channel || channel.id !== player.voiceChannel) {
+    if (!channel || queue.voiceChannel.id !== channel.id) {
       return message.reply('You need to be in the same voice channel as the bot to change volume!');
     }
     
     // If no args, return current volume
     if (!args.length) {
-      return message.reply(`The current volume is: **${player.volume}%**`);
+      return message.reply(`The current volume is: **${queue.volume}%**`);
     }
     
     // Get the volume
@@ -31,7 +31,7 @@ module.exports = {
     }
     
     // Set the volume
-    player.setVolume(volume);
+    queue.setVolume(volume);
     
     // Create an embed for the response
     const embed = new EmbedBuilder()

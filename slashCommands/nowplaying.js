@@ -6,10 +6,10 @@ module.exports = {
     .setDescription('Show detailed information about the currently playing song'),
   
   async execute(interaction, client) {
-    const player = client.manager.get(interaction.guild.id);
+    const queue = client.distube.getQueue(interaction.guildId);
     
-    // Check if there is a player and it's playing
-    if (!player || !player.queue.current) {
+    // Check if there is a queue and it's playing
+    if (!queue || !queue.songs || queue.songs.length === 0) {
       return interaction.reply({ 
         content: 'No music is currently playing!',
         ephemeral: true 
@@ -17,11 +17,11 @@ module.exports = {
     }
     
     // Get the current track
-    const track = player.queue.current;
+    const track = queue.songs[0];
     
     // Calculate the progress bar
-    const duration = track.duration;
-    const position = player.position;
+    const duration = track.duration * 1000; // Convert to ms
+    const position = queue.currentTime * 1000; // Convert to ms
     const progress = createProgressBar(position, duration);
     
     // Format timestamps
@@ -31,12 +31,12 @@ module.exports = {
     // Create an embed for the response
     const embed = new EmbedBuilder()
       .setTitle('Now Playing')
-      .setDescription(`[${track.title}](${track.uri})`)
+      .setDescription(`[${track.name}](${track.url})`)
       .addFields(
         { name: 'Duration', value: `${positionTimestamp} ${progress} ${durationTimestamp}`, inline: false },
-        { name: 'Requested By', value: `<@${track.requester.id}>`, inline: true },
-        { name: 'Volume', value: `${player.volume}%`, inline: true },
-        { name: 'Queue Length', value: `${player.queue.length} song(s)`, inline: true }
+        { name: 'Requested By', value: `<@${track.user.id}>`, inline: true },
+        { name: 'Volume', value: `${queue.volume}%`, inline: true },
+        { name: 'Queue Length', value: `${queue.songs.length} song(s)`, inline: true }
       )
       .setThumbnail(track.thumbnail || 'https://i.imgur.com/4M7IWwP.png')
       .setColor('#0099FF')
@@ -47,7 +47,7 @@ module.exports = {
       .addComponents(
         new ButtonBuilder()
           .setCustomId('pause_resume')
-          .setLabel(player.paused ? '▶️ Resume' : '⏸️ Pause')
+          .setLabel(queue.paused ? '▶️ Resume' : '⏸️ Pause')
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('skip')
@@ -64,21 +64,14 @@ module.exports = {
       );
     
     interaction.reply({ embeds: [embed], components: [row] }).then(() => {
-      // Delete the old now playing message if it exists
-      const oldMessageId = player.get('nowPlayingMessage');
-      if (oldMessageId) {
-        const oldChannel = client.channels.cache.get(player.textChannel);
-        if (oldChannel) {
-          oldChannel.messages.fetch(oldMessageId).then(oldMsg => {
-            if (oldMsg && !oldMsg.deleted) {
-              oldMsg.delete().catch(() => {});
-            }
-          }).catch(() => {});
-        }
-      }
+      // Store the message ID for later reference
+      client.nowPlayingMessages = client.nowPlayingMessages || new Map();
       
-      // We can't save interaction replies as now playing messages
-      // because they have different behavior from regular messages
+      // Record this as the latest nowplaying message for this guild
+      client.nowPlayingMessages.set(interaction.guildId, {
+        channelId: interaction.channelId,
+        messageId: interaction.id // For interactions, this is the interaction ID
+      });
     });
   },
 };

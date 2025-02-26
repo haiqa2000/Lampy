@@ -1,48 +1,46 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder } = require('@discordjs/builders');
+const { EmbedBuilder } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('queue')
-    .setDescription('Show the current music queue'),
+    .setDescription('Display the current music queue'),
   
   async execute(interaction, client) {
-    const player = client.manager.get(interaction.guild.id);
+    const queue = client.distube.getQueue(interaction.guildId);
     
-    if (!player || !player.queue.current) {
-      return interaction.reply({ 
-        content: 'No music is currently playing!',
-        ephemeral: true 
-      });
+    if (!queue || !queue.songs.length) {
+      return interaction.reply('There is nothing in the queue right now!');
     }
     
-    const queue = player.queue;
+    const queueList = queue.songs
+      .slice(0, 10)
+      .map((song, index) => 
+        `${index === 0 ? '**Now Playing:**' : `**${index}.**`} [${song.name}](${song.url}) - \`${formatDuration(song.duration * 1000)}\``
+      )
+      .join('\n');
     
-    // Format the current queue
-    let queueList = queue.map((track, index) => 
-      `${index + 1}. [${track.title}](${track.uri}) [${formatDuration(track.duration)}]`
-    ).join('\n').substring(0, 2048);
-    
-    if (queueList.length === 0) {
-      queueList = 'No upcoming songs in queue.';
-    }
+    const totalSongs = queue.songs.length - 1;
+    const totalDuration = formatDuration(
+      queue.songs.reduce((acc, song) => acc + song.duration * 1000, 0)
+    );
     
     const embed = new EmbedBuilder()
       .setTitle('Music Queue')
-      .setDescription(`**Now Playing:** [${player.queue.current.title}](${player.queue.current.uri}) [${formatDuration(player.queue.current.duration)}]\n\n**Up Next:**\n${queueList}`)
+      .setDescription(`${queueList}\n\n${totalSongs > 10 ? `\nAnd ${totalSongs - 10} more song(s)` : ''}\n\n**Total Duration:** \`${totalDuration}\``)
       .setColor('#0099FF')
       .setTimestamp();
     
     interaction.reply({ embeds: [embed] });
-  },
+    
+    function formatDuration(ms) {
+      const seconds = Math.floor((ms / 1000) % 60);
+      const minutes = Math.floor((ms / 1000 / 60) % 60);
+      const hours = Math.floor(ms / 1000 / 60 / 60);
+    
+      return hours > 0
+        ? `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+        : `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+  }
 };
-
-// Helper function for both commands
-function formatDuration(ms) {
-  const seconds = Math.floor((ms / 1000) % 60);
-  const minutes = Math.floor((ms / 1000 / 60) % 60);
-  const hours = Math.floor(ms / 1000 / 60 / 60);
-
-  return hours > 0
-    ? `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-    : `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}

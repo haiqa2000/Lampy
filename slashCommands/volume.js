@@ -12,10 +12,10 @@ module.exports = {
         .setRequired(false)),
   
   async execute(interaction, client) {
-    const player = client.manager.get(interaction.guild.id);
+    const queue = client.distube.getQueue(interaction.guildId);
     
-    // Check if there is a player
-    if (!player) {
+    // Check if there is a queue
+    if (!queue) {
       return interaction.reply({ 
         content: 'No music is currently playing!',
         ephemeral: true 
@@ -24,7 +24,7 @@ module.exports = {
     
     // Check if the user is in the same voice channel
     const { channel } = interaction.member.voice;
-    if (!channel || channel.id !== player.voiceChannel) {
+    if (!channel || channel.id !== queue.voiceChannel.id) {
       return interaction.reply({ 
         content: 'You need to be in the same voice channel as the bot to change volume!',
         ephemeral: true 
@@ -36,11 +36,11 @@ module.exports = {
     
     // If no volume specified, return current volume
     if (volume === null) {
-      return interaction.reply(`The current volume is: **${player.volume}%**`);
+      return interaction.reply(`The current volume is: **${queue.volume}%**`);
     }
     
     // Set the volume
-    player.setVolume(volume);
+    queue.setVolume(volume);
     
     // Create an embed for the response
     const embed = new EmbedBuilder()

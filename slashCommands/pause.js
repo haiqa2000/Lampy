@@ -6,10 +6,10 @@ module.exports = {
     .setDescription('Pause or resume the currently playing music'),
   
   async execute(interaction, client) {
-    const player = client.manager.get(interaction.guild.id);
+    const queue = client.distube.getQueue(interaction.guildId);
     
-    // Check if there is a player and it's playing
-    if (!player || !player.queue.current) {
+    // Check if there is a queue and it's playing
+    if (!queue) {
       return interaction.reply({ 
         content: 'No music is currently playing!',
         ephemeral: true 
@@ -18,7 +18,7 @@ module.exports = {
     
     // Check if the user is in the same voice channel
     const { channel } = interaction.member.voice;
-    if (!channel || channel.id !== player.voiceChannel) {
+    if (!channel || channel.id !== queue.voiceChannel.id) {
       return interaction.reply({ 
         content: 'You need to be in the same voice channel as the bot to pause/resume music!',
         ephemeral: true 
@@ -26,15 +26,19 @@ module.exports = {
     }
     
     // Toggle pause state
-    player.pause(!player.paused);
+    if (queue.paused) {
+      queue.resume();
+    } else {
+      queue.pause();
+    }
     
     // Create an embed for the response
     const embed = new EmbedBuilder()
-      .setTitle(player.paused ? 'Music Paused' : 'Music Resumed')
-      .setDescription(player.paused 
-        ? `Paused [${player.queue.current.title}](${player.queue.current.uri})` 
-        : `Resumed [${player.queue.current.title}](${player.queue.current.uri})`)
-      .setColor(player.paused ? '#FFCC00' : '#00FF00')
+      .setTitle(queue.paused ? 'Music Paused' : 'Music Resumed')
+      .setDescription(queue.paused 
+        ? `Paused [${queue.songs[0].name}](${queue.songs[0].url})` 
+        : `Resumed [${queue.songs[0].name}](${queue.songs[0].url})`)
+      .setColor(queue.paused ? '#FFCC00' : '#00FF00')
       .setTimestamp();
     
     interaction.reply({ embeds: [embed] });

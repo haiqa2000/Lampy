@@ -40,9 +40,9 @@ module.exports = {
       .setTimestamp()
       .setFooter({ text: `Type ${prefix}help [command] for detailed info on a command` });
     
-    // Create categories
+    // Create categories - updated to match DisTube commands
     const categories = {
-      'Music': ['play', 'pause', 'stop', 'skip', 'volume', 'queue', 'nowplaying'],
+      'Music': ['play', 'pause', 'stop', 'skip', 'volume', 'queue', 'nowplaying', 'resume'],
       'Utility': ['help']
     };
     

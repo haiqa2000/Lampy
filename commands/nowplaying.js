@@ -5,19 +5,19 @@ module.exports = {
   aliases: ['np', 'current'],
   description: 'Show detailed information about the currently playing song',
   execute(message, args, client) {
-    const player = client.manager.get(message.guild.id);
+    const queue = client.distube.getQueue(message.guildId);
     
-    // Check if there is a player and it's playing
-    if (!player || !player.queue.current) {
+    // Check if there is a queue and it's playing
+    if (!queue || !queue.songs[0]) {
       return message.reply('No music is currently playing!');
     }
     
-    // Get the current track
-    const track = player.queue.current;
+    // Get the current song
+    const song = queue.songs[0];
     
     // Calculate the progress bar
-    const duration = track.duration;
-    const position = player.position;
+    const duration = song.duration * 1000; // DisTube uses seconds, convert to ms for the helper function
+    const position = queue.currentTime * 1000; // Convert to ms
     const progress = createProgressBar(position, duration);
     
     // Format timestamps
@@ -27,14 +27,14 @@ module.exports = {
     // Create an embed for the response
     const embed = new EmbedBuilder()
       .setTitle('Now Playing')
-      .setDescription(`[${track.title}](${track.uri})`)
+      .setDescription(`[${song.name}](${song.url})`)
       .addFields(
         { name: 'Duration', value: `${positionTimestamp} ${progress} ${durationTimestamp}`, inline: false },
-        { name: 'Requested By', value: `<@${track.requester.id}>`, inline: true },
-        { name: 'Volume', value: `${player.volume}%`, inline: true },
-        { name: 'Queue Length', value: `${player.queue.length} song(s)`, inline: true }
+        { name: 'Requested By', value: `<@${song.user.id}>`, inline: true },
+        { name: 'Volume', value: `${queue.volume}%`, inline: true },
+        { name: 'Queue Length', value: `${queue.songs.length - 1} song(s)`, inline: true }
       )
-      .setThumbnail(track.thumbnail || 'https://i.imgur.com/4M7IWwP.png')
+      .setThumbnail(song.thumbnail || 'https://i.imgur.com/4M7IWwP.png')
       .setColor('#0099FF')
       .setTimestamp();
     
@@ -43,7 +43,7 @@ module.exports = {
       .addComponents(
         new ButtonBuilder()
           .setCustomId('pause_resume')
-          .setLabel(player.paused ? '▶️ Resume' : '⏸️ Pause')
+          .setLabel(queue.paused ? '▶️ Resume' : '⏸️ Pause')
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('skip')
@@ -61,9 +61,9 @@ module.exports = {
     
     message.channel.send({ embeds: [embed], components: [row] }).then(msg => {
       // Delete the old now playing message if it exists
-      const oldMessageId = player.get('nowPlayingMessage');
+      const oldMessageId = client.nowPlayingMessages.get(message.guildId);
       if (oldMessageId) {
-        const oldChannel = client.channels.cache.get(player.textChannel);
+        const oldChannel = message.channel;
         if (oldChannel) {
           oldChannel.messages.fetch(oldMessageId).then(oldMsg => {
             if (oldMsg && !oldMsg.deleted) {
@@ -74,7 +74,7 @@ module.exports = {
       }
       
       // Save the new message ID
-      player.set('nowPlayingMessage', msg.id);
+      client.nowPlayingMessages.set(message.guildId, msg.id);
     });
   },
 };
