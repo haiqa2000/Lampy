@@ -1,3 +1,7 @@
+const ffmpeg = require('@ffmpeg-installer/ffmpeg');
+process.env.FFMPEG_PATH = ffmpeg.path;
+console.log("FFmpeg Path:", process.env.FFMPEG_PATH);
+
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Collection } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
@@ -34,15 +38,11 @@ const config = {
 
 // Initialize DisTube with plugins
 client.distube = new DisTube(client, {
-  leaveOnStop: false,
-  leaveOnFinish: false,
-  leaveOnEmpty: true,
   emitNewSongOnly: true,
   emitAddSongWhenCreatingQueue: false,
   emitAddListWhenCreatingQueue: false,
   plugins: [
     new SpotifyPlugin({
-      emitEventsAfterFetching: true,
       api: {
         clientId: config.spotify.clientId,
         clientSecret: config.spotify.clientSecret,
@@ -73,11 +73,19 @@ for (const file of commandFiles) {
 const slashCommandFiles = fs.readdirSync(slashCommandsPath).filter(file => file.endsWith('.js'));
 const slashCommandsArray = [];
 
+const commandNames = new Set();
+
 for (const file of slashCommandFiles) {
   const filePath = path.join(slashCommandsPath, file);
   const command = require(filePath);
-  client.slashCommands.set(command.data.name, command);
-  slashCommandsArray.push(command.data.toJSON());
+
+  if (commandNames.has(command.data.name)) {
+    console.error(`Duplicate command detected: ${command.data.name}`);
+  } else {
+    commandNames.add(command.data.name);
+    client.slashCommands.set(command.data.name, command);
+    slashCommandsArray.push(command.data.toJSON());
+  }
 }
 
 // Register slash commands
